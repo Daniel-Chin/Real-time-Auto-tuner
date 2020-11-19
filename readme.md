@@ -1,6 +1,6 @@
 # Real-time Auto-tuner
 Final project for Intro to Computer Music @ NYU Shanghai, supervised by Gus Xia.  
-Previous collaborators: Evan Ma  
+Previous collaborators: Evan Ma, Saili Yao  
 
 ## Status
 project suspended.  
