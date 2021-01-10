@@ -37,7 +37,6 @@ tolerance = HYSTERESIS
 time_start = 0
 
 def main():
-    global streamOut
     pa = pyaudio.PyAudio()
     streamIn = pa.open(
         format = DTYPE[1], channels = 1, rate = SR, 
