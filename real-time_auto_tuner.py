@@ -5,17 +5,28 @@ from yin import yin
 import numpy as np
 from resampy import resample
 
-CONFIDENCE_TIME = .1
+print('Preparing constants...')
+# CONFIDENCE_TIME = .1
 CONFIDENCE_TIME = .00001
 HYSTERESIS = .2
+FRAME_LEN = 1024
+CROSS_FADE = 0.04
 
 SR = 44100
-FRAME_LEN = 1024
 DTYPE = (np.float32, pyaudio.paFloat32)
 # FILTER = 'kaiser_fast'
 FILTER = 'kaiser_best'
+
 FRAME_TIME = 1 / SR * FRAME_LEN
 FRAME_CONFIDENCE = FRAME_TIME / CONFIDENCE_TIME
+CROSS_FADE_TAILS = round(FRAME_LEN * (1 - CROSS_FADE) / 2)
+CROSS_FADE_OVERLAP = FRAME_LEN - 2 * CROSS_FADE_TAILS
+assert CROSS_FADE_OVERLAP + 2 * CROSS_FADE_TAILS == FRAME_LEN
+# Linear cross fade
+FADE_IN_WINDOW = np.array([
+    x / CROSS_FADE_OVERLAP for x in range(CROSS_FADE_OVERLAP)
+], dtype=DTYPE[0])
+FADE_OUT_WINDOW = np.flip(FADE_IN_WINDOW)
 
 def main():
     pa = pyaudio.PyAudio()
@@ -101,18 +112,18 @@ def pitchBend(frame, pitch_to_bend):
         return frame
     freq_oitar = np.exp(- pitch_to_bend * 0.057762265046662105)
     # The inverse of 'ratio'
-    if freq_oitar < 1.0:
-        # sharper
-        frame = resample(frame, SR, SR * freq_oitar, filter=FILTER)
-        return np.append(frame, frame[frame.size - FRAME_LEN:])
-    else:
-        # flatter
-        frame = frame[:int(FRAME_LEN / freq_oitar)]
-        frame = resample(frame, SR, SR * freq_oitar, filter=FILTER)
-        if frame.size < FRAME_LEN:
-            return np.append(frame, frame[frame.size - FRAME_LEN:])
-        else:
-            return frame[:FRAME_LEN]
+    frame = resample(frame, SR, SR * freq_oitar, filter=FILTER)
+    left      = frame[:CROSS_FADE_TAILS]
+    left_mid  = frame[CROSS_FADE_TAILS:CROSS_FADE_TAILS + CROSS_FADE_OVERLAP]
+    right_mid = frame[-CROSS_FADE_TAILS - CROSS_FADE_OVERLAP:-CROSS_FADE_TAILS]
+    right     = frame[-CROSS_FADE_TAILS:]
+    frame = np.concatenate((
+        left, 
+        np.multiply(left_mid, FADE_OUT_WINDOW) 
+        + np.multiply(right_mid, FADE_IN_WINDOW), 
+        right,
+    ))
+    return frame
 
 METER_WIDTH = 50
 METER = '[' + ' ' * METER_WIDTH + '|' + ' ' * METER_WIDTH + ']'
