@@ -5,12 +5,17 @@ from yin import yin
 import numpy as np
 from resampy import resample
 
+CONFIDENCE_TIME = .1
+CONFIDENCE_TIME = .00001
+HYSTERESIS = .2
+
 SR = 44100
 FRAME_LEN = 1024
 DTYPE = (np.float32, pyaudio.paFloat32)
 # FILTER = 'kaiser_fast'
 FILTER = 'kaiser_best'
 FRAME_TIME = 1 / SR * FRAME_LEN
+FRAME_CONFIDENCE = FRAME_TIME / CONFIDENCE_TIME
 
 def main():
     pa = pyaudio.PyAudio()
@@ -38,6 +43,9 @@ def main():
 
 def autotune(stream, streamOut):
     display_time = 0
+    classification = 0
+    confidence = 0
+    tolerance = HYSTERESIS
     while True:
         time_start = time()
         frame, waste = getLatestFrame(stream)
@@ -49,7 +57,23 @@ def autotune(stream, streamOut):
         f0_time = time() - time_start
 
         time_start = time()
-        frame, pitch_to_bend = pitchBend(frame, pitch)
+        loss = abs(pitch - classification) - .5
+        if loss < 0:
+            confidence = min(
+                1, confidence + FRAME_CONFIDENCE
+            )
+            tolerance = HYSTERESIS
+        else:
+            tolerance -= loss
+            if tolerance < 0:
+                confidence = 0
+                classification = round(pitch)
+        pitch_to_bend = classification - pitch
+        confident_correction = pitch_to_bend * confidence
+        hysteresis_time = time() - time_start
+
+        time_start = time()
+        frame = pitchBend(frame, confident_correction)
         bender_time = time() - time_start
 
         time_start = time()
@@ -59,7 +83,8 @@ def autotune(stream, streamOut):
         time_start = time()
         display(
             idle_time, f0_time, bender_time, write_time,
-            display_time, pitch_to_bend, waste
+            display_time, pitch_to_bend, waste, 
+            hysteresis_time, 
         )
         display_time = time() - time_start
 
@@ -71,44 +96,44 @@ def getLatestFrame(stream):
         stream.read(FRAME_LEN), dtype = DTYPE[0]
     ), waste
 
-def pitchBend(frame, its_pitch):
-    pitch_to_bend = - (its_pitch % 1)
-    if pitch_to_bend < -.5:
-        pitch_to_bend += 1
+def pitchBend(frame, pitch_to_bend):
     if pitch_to_bend == 0:
-        return frame, 0
+        return frame
     freq_oitar = np.exp(- pitch_to_bend * 0.057762265046662105)
     # The inverse of 'ratio'
     if freq_oitar < 1.0:
         # sharper
         frame = resample(frame, SR, SR * freq_oitar, filter=FILTER)
-        return np.append(frame, frame[frame.size - FRAME_LEN:]), pitch_to_bend
+        return np.append(frame, frame[frame.size - FRAME_LEN:])
     else:
         # flatter
         frame = frame[:int(FRAME_LEN / freq_oitar)]
         frame = resample(frame, SR, SR * freq_oitar, filter=FILTER)
         if frame.size < FRAME_LEN:
-            return np.append(frame, frame[frame.size - FRAME_LEN:]), pitch_to_bend
+            return np.append(frame, frame[frame.size - FRAME_LEN:])
         else:
-            return frame[:FRAME_LEN], pitch_to_bend
+            return frame[:FRAME_LEN]
 
 METER_WIDTH = 50
 METER = '[' + ' ' * METER_WIDTH + '|' + ' ' * METER_WIDTH + ']'
 METER_CENTER = METER_WIDTH + 1
 TIMES = [
-    'idle_time', 'f0_time', 'bender_time', 'write_time', 
-    'display_time', 
+    'idle_time', 'f0_time', 'hysteresis_time', 
+    'bender_time', 'write_time', 'display_time', 
 ]
 def display(
     idle_time, f0_time, bender_time, write_time, 
-    display_time, pitch_to_bend, waste, 
+    display_time, pitch_to_bend, waste, hysteresis_time, 
 ):
     buffer_0 = [*METER]
-    offset = - round(METER_WIDTH * pitch_to_bend * 1.95)
-    buffer_0[METER_CENTER + offset] = '#'
+    offset = - round(METER_WIDTH * pitch_to_bend)
+    try:
+        buffer_0[METER_CENTER + offset] = '#'
+    except IndexError:
+        print('爆表了：', pitch_to_bend)
     _locals = locals()
     print(*buffer_0, sep='')
-    print(*[x + ' {:4.0%}.   '.format(_locals[x] / FRAME_TIME) for x in TIMES], end='')
+    print('', *[x[:-5] + ' {:4.0%}.    '.format(_locals[x] / FRAME_TIME) for x in TIMES], end='')
     print('Waste:', max(0, waste))  # samples dumped
 
 def relay(stream, streamOut):
