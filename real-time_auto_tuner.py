@@ -5,6 +5,7 @@ from yin import yin
 import numpy as np
 from resampy import resample
 from queue import Queue
+from threading import Lock
 
 print('Preparing constants...')
 # CONFIDENCE_TIME = .1
@@ -44,8 +45,11 @@ echoBuffer = [
     np.zeros((FRAME_LEN, ), DTYPE[0]) 
     for _ in range(ECHO_TIMES * ECHO_FPP)
 ]
+release_state = 0
+lock = Lock()
 
 def main():
+    global release_state
     pa = pyaudio.PyAudio()
     streamOutContainer.append(pa.open(
         format = DTYPE[1], channels = 1, rate = SR, 
@@ -64,15 +68,25 @@ def main():
     except KeyboardInterrupt:
         print('Ctrl+C received. Shutting down. ')
     finally:
+        lock.acquire()
+        release_state = 1
+        lock.acquire()
+        lock.release()
         streamOutContainer[0].stop_stream()
         streamOutContainer[0].close()
+        sleep(.4)   # not perfect
         streamIn.stop_stream()
         streamIn.close()
         pa.terminate()
         print('Resources released. ')
 
 def onAudioIn(in_data, frame_count, time_info, status):
-    global display_time, classification, confidence, tolerance, time_start
+    global display_time, classification, confidence, tolerance, time_start, release_state
+
+    if release_state == 1:
+        release_state = 2
+        lock.release()
+        return (None, pyaudio.paComplete)
 
     idle_time = time() - time_start
 
