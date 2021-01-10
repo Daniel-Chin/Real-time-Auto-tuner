@@ -3,7 +3,7 @@ import sys
 import socket
 from util import *
 from numpy import fromstring, int8, float16, log
-from yin import estimateF0
+from yin import yin
 PITCHER = 2334
 ANALYZER = 2333
 WINDOW_SIZE = 4096
@@ -30,7 +30,7 @@ def main():
 			
 			page = fromstring(data, dtype = int8).astype(float16) / 128.0
 			# `page` is a WINDOW_SIZE long array of float16 between -1 and 1. 
-			f0 = estimateF0(page, WINDOW_SIZE, 44100)
+			f0 = yin(page, 44100, WINDOW_SIZE)
 			pitch = log(f0) * 17.312340490667562 - 36.37631656229591
 			residu = pitch % 1
 			# chroma = round(pitch) % 12
