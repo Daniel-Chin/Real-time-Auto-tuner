@@ -38,15 +38,15 @@ time_start = 0
 
 def main():
     pa = pyaudio.PyAudio()
+    streamOutContainer.append(pa.open(
+        format = DTYPE[1], channels = 1, rate = SR, 
+        output = True, frames_per_buffer = FRAME_LEN,
+    ))
     streamIn = pa.open(
         format = DTYPE[1], channels = 1, rate = SR, 
         input = True, frames_per_buffer = FRAME_LEN,
         stream_callback = onAudioIn, 
     )
-    streamOutContainer.append(pa.open(
-        format = DTYPE[1], channels = 1, rate = SR, 
-        output = True, frames_per_buffer = FRAME_LEN,
-    ))
     streamIn.start_stream()
     try:
         while streamIn.is_active():
