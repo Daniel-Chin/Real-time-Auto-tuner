@@ -12,11 +12,15 @@ CONFIDENCE_TIME = .00001
 HYSTERESIS = .2
 FRAME_LEN = 1024
 CROSS_FADE = 0.04
+DO_ECHO = False
 
 SR = 44100
 DTYPE = (np.float32, pyaudio.paFloat32)
 # FILTER = 'kaiser_fast'
 FILTER = 'kaiser_best'
+ECHO_TIMES = 6
+ECHO_DECAY = -1.5
+ECHO_PERIOD = .15
 
 FRAME_TIME = 1 / SR * FRAME_LEN
 FRAME_CONFIDENCE = FRAME_TIME / CONFIDENCE_TIME
@@ -26,8 +30,9 @@ assert CROSS_FADE_OVERLAP + 2 * CROSS_FADE_TAILS == FRAME_LEN
 # Linear cross fade
 FADE_IN_WINDOW = np.array([
     x / CROSS_FADE_OVERLAP for x in range(CROSS_FADE_OVERLAP)
-], dtype=DTYPE[0])
+], DTYPE[0])
 FADE_OUT_WINDOW = np.flip(FADE_IN_WINDOW)
+ECHO_FPP = round(ECHO_PERIOD / FRAME_TIME)
 
 streamOutContainer = []
 display_time = 0
@@ -35,6 +40,10 @@ classification = 0
 confidence = 0
 tolerance = HYSTERESIS
 time_start = 0
+echoBuffer = [
+    np.zeros((FRAME_LEN, ), DTYPE[0]) 
+    for _ in range(ECHO_TIMES * ECHO_FPP)
+]
 
 def main():
     pa = pyaudio.PyAudio()
@@ -96,6 +105,16 @@ def onAudioIn(in_data, frame_count, time_info, status):
     bender_time = time() - time_start
 
     time_start = time()
+    if DO_ECHO:
+        echoBuffer.append(frame)
+        frame = sum([
+            x * np.exp(ECHO_DECAY * (ECHO_TIMES - i)) 
+            for i, x in enumerate(echoBuffer[0::ECHO_FPP])
+        ])
+        echoBuffer.pop(0)
+    echo_time = time() - time_start
+
+    time_start = time()
     streamOutContainer[0].write(frame, FRAME_LEN)
     write_time = time() - time_start
 
@@ -103,7 +122,7 @@ def onAudioIn(in_data, frame_count, time_info, status):
     display(
         f0_time, bender_time, write_time,
         display_time, pitch_to_bend, 
-        hysteresis_time, idle_time, 
+        hysteresis_time, idle_time, echo_time,
     )
     display_time = time() - time_start
 
@@ -133,12 +152,13 @@ METER = '[' + ' ' * METER_WIDTH + '|' + ' ' * METER_WIDTH + ']'
 METER_CENTER = METER_WIDTH + 1
 TIMES = [
     'f0_time', 'hysteresis_time', 
-    'bender_time', 'write_time', 'display_time', 
-    'idle_time',
+    'bender_time', 'echo_time', 'write_time', 
+    'display_time', 'idle_time',
 ]
 def display(
     f0_time, bender_time, write_time, 
-    display_time, pitch_to_bend, hysteresis_time, idle_time,
+    display_time, pitch_to_bend, hysteresis_time, 
+    idle_time, echo_time, 
 ):
     buffer_0 = [*METER]
     offset = - round(METER_WIDTH * pitch_to_bend)
