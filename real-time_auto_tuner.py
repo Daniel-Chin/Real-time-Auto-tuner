@@ -1,9 +1,10 @@
 print('importing...')
 import pyaudio
-from time import time
+from time import time, sleep
 from yin import yin
 import numpy as np
 from resampy import resample
+from queue import Queue
 
 print('Preparing constants...')
 # CONFIDENCE_TIME = .1
@@ -28,84 +29,87 @@ FADE_IN_WINDOW = np.array([
 ], dtype=DTYPE[0])
 FADE_OUT_WINDOW = np.flip(FADE_IN_WINDOW)
 
+streamOutContainer = []
+display_time = 0
+classification = 0
+confidence = 0
+tolerance = HYSTERESIS
+time_start = 0
+
 def main():
+    global streamOut
     pa = pyaudio.PyAudio()
-    stream = pa.open(
+    streamIn = pa.open(
         format = DTYPE[1], channels = 1, rate = SR, 
         input = True, frames_per_buffer = FRAME_LEN,
+        stream_callback = onAudioIn, 
     )
-    streamOut = pa.open(
+    streamOutContainer.append(pa.open(
         format = DTYPE[1], channels = 1, rate = SR, 
         output = True, frames_per_buffer = FRAME_LEN,
-    )
+    ))
+    streamIn.start_stream()
     try:
-        print('autotune()')
-        autotune(stream, streamOut)
+        while streamIn.is_active():
+            sleep(1)
         # relay(stream, streamOut)
     except KeyboardInterrupt:
         print('Ctrl+C received. Shutting down. ')
     finally:
-        stream.stop_stream()
-        stream.close()
-        streamOut.stop_stream()
-        streamOut.close()
+        streamOutContainer[0].stop_stream()
+        streamOutContainer[0].close()
+        streamIn.stop_stream()
+        streamIn.close()
         pa.terminate()
         print('Resources released. ')
 
-def autotune(stream, streamOut):
-    display_time = 0
-    classification = 0
-    confidence = 0
-    tolerance = HYSTERESIS
-    while True:
-        time_start = time()
-        frame, waste = getLatestFrame(stream)
-        idle_time = time() - time_start
+def onAudioIn(in_data, frame_count, time_info, status):
+    global display_time, classification, confidence, tolerance, time_start
 
-        time_start = time()
-        f0 = yin(frame, SR, FRAME_LEN)
-        pitch = np.log(f0) * 17.312340490667562 - 36.37631656229591
-        f0_time = time() - time_start
+    idle_time = time() - time_start
 
-        time_start = time()
-        loss = abs(pitch - classification) - .5
-        if loss < 0:
-            confidence = min(
-                1, confidence + FRAME_CONFIDENCE
-            )
-            tolerance = HYSTERESIS
-        else:
-            tolerance -= loss
-            if tolerance < 0:
-                confidence = 0
-                classification = round(pitch)
-        pitch_to_bend = classification - pitch
-        confident_correction = pitch_to_bend * confidence
-        hysteresis_time = time() - time_start
+    time_start = time()
+    frame = np.frombuffer(
+        in_data, dtype = DTYPE[0]
+    )
+    f0 = yin(frame, SR, FRAME_LEN)
+    pitch = np.log(f0) * 17.312340490667562 - 36.37631656229591
+    f0_time = time() - time_start
 
-        time_start = time()
-        frame = pitchBend(frame, confident_correction)
-        bender_time = time() - time_start
-
-        time_start = time()
-        streamOut.write(frame, FRAME_LEN)
-        write_time = time() - time_start
-
-        time_start = time()
-        display(
-            idle_time, f0_time, bender_time, write_time,
-            display_time, pitch_to_bend, waste, 
-            hysteresis_time, 
+    time_start = time()
+    loss = abs(pitch - classification) - .5
+    if loss < 0:
+        confidence = min(
+            1, confidence + FRAME_CONFIDENCE
         )
-        display_time = time() - time_start
+        tolerance = HYSTERESIS
+    else:
+        tolerance -= loss
+        if tolerance < 0:
+            confidence = 0
+            classification = round(pitch)
+    pitch_to_bend = classification - pitch
+    confident_correction = pitch_to_bend * confidence
+    hysteresis_time = time() - time_start
 
-def getLatestFrame(stream):
-    waste = stream.get_read_available() - FRAME_LEN
-    if waste > 0:
-        stream.read(waste)
-    return np.frombuffer(
-        stream.read(FRAME_LEN), dtype = DTYPE[0]
-    ), waste
+    time_start = time()
+    frame = pitchBend(frame, confident_correction)
+    bender_time = time() - time_start
+
+    time_start = time()
+    streamOutContainer[0].write(frame, FRAME_LEN)
+    write_time = time() - time_start
+
+    time_start = time()
+    display(
+        f0_time, bender_time, write_time,
+        display_time, pitch_to_bend, 
+        hysteresis_time, idle_time, 
+    )
+    display_time = time() - time_start
+
+    time_start = time()
+    return (None, pyaudio.paContinue)
 
 def pitchBend(frame, pitch_to_bend):
     if pitch_to_bend == 0:
@@ -129,12 +133,13 @@ METER_WIDTH = 50
 METER = '[' + ' ' * METER_WIDTH + '|' + ' ' * METER_WIDTH + ']'
 METER_CENTER = METER_WIDTH + 1
 TIMES = [
-    'idle_time', 'f0_time', 'hysteresis_time', 
+    'f0_time', 'hysteresis_time', 
     'bender_time', 'write_time', 'display_time', 
+    'idle_time',
 ]
 def display(
-    idle_time, f0_time, bender_time, write_time, 
-    display_time, pitch_to_bend, waste, hysteresis_time, 
+    f0_time, bender_time, write_time, 
+    display_time, pitch_to_bend, hysteresis_time, idle_time,
 ):
     buffer_0 = [*METER]
     offset = - round(METER_WIDTH * pitch_to_bend)
@@ -144,13 +149,6 @@ def display(
         print('爆表了：', pitch_to_bend)
     _locals = locals()
     print(*buffer_0, sep='')
-    print('', *[x[:-5] + ' {:4.0%}.    '.format(_locals[x] / FRAME_TIME) for x in TIMES], end='')
-    print('Waste:', max(0, waste))  # samples dumped
-
-def relay(stream, streamOut):
-    while True:
-        frame, waste = getLatestFrame(stream)
-        streamOut.write(frame, FRAME_LEN)
-        print(waste)
+    print('', *[x[:-5] + ' {:4.0%}.    '.format(_locals[x] / FRAME_TIME) for x in TIMES])
 
 main()
