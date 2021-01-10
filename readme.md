@@ -10,3 +10,6 @@ Daniel really wants to pick it back up soon.
 
 ## Documentation
 under construction.  
+
+## Legacy
+The project was originally implemented with five processes, aiming to maximize multi-core CPU usage. 
