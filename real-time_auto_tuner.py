@@ -1,11 +1,16 @@
 print('importing...')
 import pyaudio
 from time import time, sleep
-from yin import yin
 import numpy as np
 from resampy import resample
 from queue import Queue
 from threading import Lock
+try:
+    from yin import yin
+except ImportError:
+    print('Missing module "yin". Please download at')
+    print('https://github.com/Daniel-Chin/Python_Lib/blob/master/yin.py')
+    input('Press Enter to quit...')
 
 print('Preparing constants...')
 # CONFIDENCE_TIME = .1
