@@ -12,6 +12,15 @@ WINDOW_SIZE = 2 * CHUNK
 assert WINDOW_SIZE % 2 == 0
 FILTER = 'kaiser_fast'
 BEND_SMOOTH = 10 
+BEND_SMOOTH = 10 
+BEND_SMOOTH = 10 
+BEND_SMOOTH = 10 
+BEND_SMOOTH = 10 
+BEND_SMOOTH = 10 
+BEND_SMOOTH = 10 
+BEND_SMOOTH = 10 
+BEND_SMOOTH = 10 
+BEND_SMOOTH = 10 
 
 def main():
 	print('MAIN')
@@ -124,6 +133,7 @@ def pitchBend(chunk):
 	if delta == 128:
 		return chunk
 	freq_ratio = 2. ** ((delta - 128) / 256 / 12)
+	# freq_ratio = 2. ** ((delta - 128) / 256 / 6)
 	len_chunk = len(chunk)
 	if freq_ratio > 1:
 		# sharper

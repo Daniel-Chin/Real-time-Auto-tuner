@@ -2,7 +2,8 @@ print('importing...')
 import sys
 import socket
 from util import *
-from numpy import fromstring, int8, float16
+from numpy import fromstring, int8, float16, log
+from yin import estimateF0
 PITCHER = 2334
 ANALYZER = 2333
 WINDOW_SIZE = 4096
@@ -29,9 +30,45 @@ def main():
 			
 			page = fromstring(data, dtype = int8).astype(float16) / 128.0
 			# `page` is a WINDOW_SIZE long array of float16 between -1 and 1. 
+			f0 = estimateF0(page, WINDOW_SIZE, 44100)
+			pitch = log(f0) * 17.312340490667562 - 36.37631656229591
+			residu = pitch % 1
+			# chroma = round(pitch) % 12
+			# symbol = [
+			# 	'C ', 'C#', 
+			# 	'D ', 'D#', 
+			# 	'E ', 
+			# 	'F ', 'F#', 
+			# 	'G ', 'G#', 
+			# 	'A ', 'A#', 
+			# 	'B ',
+			# ][chroma]
+			# print(' ', symbol, '#' * round(residu * 20), ' ' * 18, end='\r', flush=True)
+			if residu > .5:
+				residu -= 1
+			score = 128 - round(255 * residu)
+
+			# tone = pitch % 12
+			# if tone < 1:
+			# 	diatone = 0
+			# elif tone < 3:
+			# 	diatone = 2
+			# elif tone < 4.5:
+			# 	diatone = 4
+			# elif tone < 6:
+			# 	diatone = 5
+			# elif tone < 8:
+			# 	diatone = 7
+			# elif tone < 10:
+			# 	diatone = 9
+			# elif tone < 11.5:
+			# 	diatone = 11
+			# else:
+			# 	diatone = 12
+			# score = round(255 * (diatone - tone)/2) + 128
 			
-			sockPitcher.sendall(bytes([128]))
-			sockCooler.sendall(bytes([128]))
+			sockPitcher.sendall(bytes([score]))
+			sockCooler.sendall(bytes([score]))
 	finally:
 		force(sockRecorder.close)
 		force(sockPitcher.close)

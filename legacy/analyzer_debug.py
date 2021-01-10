@@ -82,11 +82,11 @@ def init():
 	assert recvall(sockCooler, 3) == b'coo'
 	print('cooler ONLINE.      ')
 	
-	print('connecting GUI...', end = '\r')
-	sockGUI, addr = serverSock.accept()
-	assert addr[0] == '127.0.0.1'
-	assert recvall(sockGUI, 3) == b'gui'
-	print('GUI ONLINE.      ')
+	# print('connecting GUI...', end = '\r')
+	# sockGUI, addr = serverSock.accept()
+	# assert addr[0] == '127.0.0.1'
+	# assert recvall(sockGUI, 3) == b'gui'
+	# print('GUI ONLINE.      ')
 	
 	# Preperations
 	print('init...')
@@ -94,7 +94,7 @@ def init():
 	# Code goes here...
 	print('Good to go. Waiting for START signal...')
 	assert recvall(sockRecorder, 5) == b'START'
-	sockGUI.sendall(b'START')
+	# sockGUI.sendall(b'START')
 	print('START')
 
 main()
